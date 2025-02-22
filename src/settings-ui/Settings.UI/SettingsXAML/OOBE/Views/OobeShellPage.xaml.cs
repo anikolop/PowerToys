@@ -173,7 +173,11 @@ namespace Microsoft.PowerToys.Settings.UI.OOBE.Views
                 ModuleName = "TextExtractor",
                 IsNew = false,
             });
-
+            Modules.Insert((int)PowerToysModules.VideoConference, new OobePowerToysModule()
+            {
+                ModuleName = "VideoConference",
+                IsNew = false,
+            });
             Modules.Insert((int)PowerToysModules.MeasureTool, new OobePowerToysModule()
             {
                 ModuleName = "MeasureTool",
@@ -286,6 +290,7 @@ namespace Microsoft.PowerToys.Settings.UI.OOBE.Views
                     case "FileExplorer": NavigationFrame.Navigate(typeof(OobeFileExplorer)); break;
                     case "ShortcutGuide": NavigationFrame.Navigate(typeof(OobeShortcutGuide)); break;
                     case "TextExtractor": NavigationFrame.Navigate(typeof(OobePowerOCR)); break;
+                    case "VideoConference": NavigationFrame.Navigate(typeof(OobeVideoConference)); break;
                     case "MouseUtils": NavigationFrame.Navigate(typeof(OobeMouseUtils)); break;
                     case "MouseWithoutBorders": NavigationFrame.Navigate(typeof(OobeMouseWithoutBorders)); break;
                     case "MeasureTool": NavigationFrame.Navigate(typeof(OobeMeasureTool)); break;
