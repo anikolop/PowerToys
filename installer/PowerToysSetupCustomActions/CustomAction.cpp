@@ -331,19 +331,6 @@ LExit:
     return WcaFinalize(er);
 }
 
-// We've deprecated Video Conference Mute. This Custom Action cleans up any stray registry entry for the driver dll.
-UINT __stdcall CleanVideoConferenceRegistryCA(MSIHANDLE hInstall)
-{
-    HRESULT hr = S_OK;
-    UINT er = ERROR_SUCCESS;
-    hr = WcaInitialize(hInstall, "CleanVideoConferenceRegistry");
-    ExitOnFailure(hr, "Failed to initialize");
-    clean_video_conference();
-LExit:
-    er = SUCCEEDED(hr) ? ERROR_SUCCESS : ERROR_INSTALL_FAILURE;
-    return WcaFinalize(er);
-}
-
 UINT __stdcall ApplyModulesRegistryChangeSetsCA(MSIHANDLE hInstall)
 {
     HRESULT hr = S_OK;
@@ -1041,6 +1028,239 @@ UINT __stdcall DetectPrevInstallPathCA(MSIHANDLE hInstall)
 }
 
 UINT __stdcall InstallCmdPalPackageCA(MSIHANDLE hInstall)
+{
+    using namespace winrt::Windows::Foundation;
+    using namespace winrt::Windows::Management::Deployment;
+
+    HRESULT hr = S_OK;
+    UINT er = ERROR_SUCCESS;
+    std::wstring installationFolder;
+
+    hr = WcaInitialize(hInstall, "InstallCmdPalPackage");
+    hr = getInstallFolder(hInstall, installationFolder);
+
+    try
+    {
+        auto msix = package::FindMsixFile(installationFolder + L"\\WinUI3Apps\\CmdPal\\", false);
+        auto dependencies = package::FindMsixFile(installationFolder + L"\\WinUI3Apps\\CmdPal\\Dependencies\\", true);
+
+        if (!msix.empty())
+        {
+            auto msixPath = msix[0];
+
+            if (!package::RegisterPackage(msixPath, dependencies))
+            {
+                Logger::error(L"Failed to install CmdPal package");
+                er = ERROR_INSTALL_FAILURE;
+            }
+        }
+    }
+    catch (std::exception &e)
+    {
+        std::string errorMessage{"Exception thrown while trying to install CmdPal package: "};
+        errorMessage += e.what();
+        Logger::error(errorMessage);
+
+        er = ERROR_INSTALL_FAILURE;
+    }
+
+    er = er == ERROR_SUCCESS ? (SUCCEEDED(hr) ? ERROR_SUCCESS : ERROR_INSTALL_FAILURE) : er;
+    return WcaFinalize(er);
+}
+
+UINT __stdcall UnRegisterCmdPalPackageCA(MSIHANDLE hInstall)
+{
+    using namespace winrt::Windows::Foundation;
+    using namespace winrt::Windows::Management::Deployment;
+
+    HRESULT hr = S_OK;
+    UINT er = ERROR_SUCCESS;
+
+    hr = WcaInitialize(hInstall, "UnRegisterCmdPalPackageCA");
+
+    try
+    {
+        // Packages to unregister
+        std::wstring packageToRemoveDisplayName {L"Microsoft.CommandPalette"};
+
+        if (!package::UnRegisterPackage(packageToRemoveDisplayName))
+        {
+            Logger::error(L"Failed to unregister package: " + packageToRemoveDisplayName);
+            er = ERROR_INSTALL_FAILURE;
+        }
+    }
+    catch (std::exception &e)
+    {
+        std::string errorMessage{"Exception thrown while trying to unregister the CmdPal package: "};
+        errorMessage += e.what();
+        Logger::error(errorMessage);
+
+        er = ERROR_INSTALL_FAILURE;
+    }
+
+    er = er == ERROR_SUCCESS ? (SUCCEEDED(hr) ? ERROR_SUCCESS : ERROR_INSTALL_FAILURE) : er;
+    return WcaFinalize(er);
+}
+
+UINT __stdcall CertifyVirtualCameraDriverCA(MSIHANDLE hInstall)
+{
+#ifdef CIBuild // On pipeline we are using microsoft certification
+    WcaInitialize(hInstall, "CertifyVirtualCameraDriverCA");
+    return WcaFinalize(ERROR_SUCCESS);
+#else
+    HRESULT hr = S_OK;
+    UINT er = ERROR_SUCCESS;
+    LPWSTR certificatePath = nullptr;
+    HCERTSTORE hCertStore = nullptr;
+    HANDLE hfile = nullptr;
+    DWORD size = INVALID_FILE_SIZE;
+    char* pFileContent = nullptr;
+
+    hr = WcaInitialize(hInstall, "CertifyVirtualCameraDriverCA");
+    ExitOnFailure(hr, "Failed to initialize", hr);
+
+    hr = WcaGetProperty(L"CustomActionData", &certificatePath);
+    ExitOnFailure(hr, "Failed to get install property", hr);
+
+    hCertStore = CertOpenStore(CERT_STORE_PROV_SYSTEM, 0, 0, CERT_SYSTEM_STORE_LOCAL_MACHINE, L"AuthRoot");
+    if (!hCertStore)
+    {
+        hr = GetLastError();
+        ExitOnFailure(hr, "Cannot put principal run level: %x", hr);
+    }
+
+    hfile = CreateFile(certificatePath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hfile == INVALID_HANDLE_VALUE)
+    {
+        hr = GetLastError();
+        ExitOnFailure(hr, "Certificate file open failed", hr);
+    }
+
+    size = GetFileSize(hfile, nullptr);
+    if (size == INVALID_FILE_SIZE)
+    {
+        hr = GetLastError();
+        ExitOnFailure(hr, "Certificate file size not valid", hr);
+    }
+
+    pFileContent = static_cast<char*>(malloc(size));
+
+    DWORD sizeread;
+    if (!ReadFile(hfile, pFileContent, size, &sizeread, nullptr))
+    {
+        hr = GetLastError();
+        ExitOnFailure(hr, "Certificate file read failed", hr);
+    }
+
+    if (!CertAddEncodedCertificateToStore(hCertStore,
+        X509_ASN_ENCODING,
+        reinterpret_cast<const BYTE*>(pFileContent),
+        size,
+        CERT_STORE_ADD_ALWAYS,
+        nullptr))
+    {
+        hr = GetLastError();
+        ExitOnFailure(hr, "Adding certificate failed", hr);
+    }
+
+    free(pFileContent);
+
+LExit:
+    ReleaseStr(certificatePath);
+    if (hCertStore)
+    {
+        CertCloseStore(hCertStore, 0);
+    }
+    if (hfile)
+    {
+        CloseHandle(hfile);
+    }
+
+    if (!SUCCEEDED(hr))
+    {
+        PMSIHANDLE hRecord = MsiCreateRecord(0);
+        MsiRecordSetString(hRecord, 0, TEXT("Failed to add certificate to store"));
+        MsiProcessMessage(hInstall, static_cast<INSTALLMESSAGE>(INSTALLMESSAGE_WARNING + MB_OK), hRecord);
+    }
+
+    er = SUCCEEDED(hr) ? ERROR_SUCCESS : ERROR_INSTALL_FAILURE;
+    return WcaFinalize(er);
+#endif
+}
+
+UINT __stdcall InstallVirtualCameraDriverCA(MSIHANDLE hInstall)
+{
+    HRESULT hr = S_OK;
+    UINT er = ERROR_SUCCESS;
+    LPWSTR driverPath = nullptr;
+
+    hr = WcaInitialize(hInstall, "InstallVirtualCameraDriverCA");
+    ExitOnFailure(hr, "Failed to initialize");
+
+    hr = WcaGetProperty(L"CustomActionData", &driverPath);
+    ExitOnFailure(hr, "Failed to get install property");
+
+    BOOL requiresReboot;
+    DiInstallDriverW(GetConsoleWindow(), driverPath, DIIRFLAG_FORCE_INF, &requiresReboot);
+
+    hr = GetLastError();
+    ExitOnFailure(hr, "Failed to install driver");
+
+LExit:
+
+    if (!SUCCEEDED(hr))
+    {
+        PMSIHANDLE hRecord = MsiCreateRecord(0);
+        MsiRecordSetString(hRecord, 0, TEXT("Failed to install virtual camera driver"));
+        MsiProcessMessage(hInstall, static_cast<INSTALLMESSAGE>(INSTALLMESSAGE_WARNING + MB_OK), hRecord);
+    }
+
+    er = SUCCEEDED(hr) ? ERROR_SUCCESS : ERROR_INSTALL_FAILURE;
+    return WcaFinalize(er);
+}
+
+UINT __stdcall UninstallVirtualCameraDriverCA(MSIHANDLE hInstall)
+{
+    HRESULT hr = S_OK;
+    UINT er = ERROR_SUCCESS;
+    LPWSTR driverPath = nullptr;
+
+    hr = WcaInitialize(hInstall, "UninstallVirtualCameraDriverCA");
+    ExitOnFailure(hr, "Failed to initialize");
+
+    hr = WcaGetProperty(L"CustomActionData", &driverPath);
+    ExitOnFailure(hr, "Failed to get uninstall property");
+
+    BOOL requiresReboot;
+    DiUninstallDriverW(GetConsoleWindow(), driverPath, 0, &requiresReboot);
+
+    switch (GetLastError())
+    {
+    case ERROR_ACCESS_DENIED:
+    case ERROR_FILE_NOT_FOUND:
+    case ERROR_INVALID_FLAGS:
+    case ERROR_IN_WOW64:
+    {
+        hr = GetLastError();
+        ExitOnFailure(hr, "Failed to uninstall driver");
+        break;
+    }
+    }
+
+LExit:
+
+    if (!SUCCEEDED(hr))
+    {
+        PMSIHANDLE hRecord = MsiCreateRecord(0);
+        MsiRecordSetString(hRecord, 0, TEXT("Failed to uninstall virtual camera driver"));
+        MsiProcessMessage(hInstall, static_cast<INSTALLMESSAGE>(INSTALLMESSAGE_WARNING + MB_OK), hRecord);
+    }
+
+    er = SUCCEEDED(hr) ? ERROR_SUCCESS : ERROR_INSTALL_FAILURE;
+    return WcaFinalize(er);
+}
+
+UINT __stdcall UnRegisterContextMenuPackagesCA(MSIHANDLE hInstall)
 {
     using namespace winrt::Windows::Foundation;
     using namespace winrt::Windows::Management::Deployment;

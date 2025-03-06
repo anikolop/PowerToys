@@ -1795,6 +1795,7 @@ vcamp
 VCENTER
 vcgtq
 VCINSTALLDIR
+vcm
 Vcpkg
 VCRT
 vcruntime
@@ -1811,6 +1812,10 @@ VFT
 vget
 vgetq
 videourl
+vid
+VIDCAP
+videoconferencevirtualdriver
+VIDEOINFOHEADER
 viewmodel
 VIRTKEY
 VIRTUALDESK

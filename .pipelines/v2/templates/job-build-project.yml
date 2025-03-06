@@ -176,6 +176,7 @@ jobs:
   - pwsh: |-
       & '.pipelines/verifyArm64Configuration.ps1' -solution '$(build.sourcesdirectory)\PowerToys.sln'
       & '.pipelines/verifyArm64Configuration.ps1' -solution '$(build.sourcesdirectory)\tools\BugReportTool\BugReportTool.sln'
+      & '.pipelines/verifyArm64Configuration.ps1' -solution '$(build.sourcesdirectory)\tools\WebcamReportTool\WebcamReportTool.sln'
       & '.pipelines/verifyArm64Configuration.ps1' -solution '$(build.sourcesdirectory)\tools\StylesReportTool\StylesReportTool.sln'
       & '.pipelines/verifyArm64Configuration.ps1' -solution '$(build.sourcesdirectory)\installer\PowerToysSetup.sln'
     displayName: Verify ARM64 configurations
@@ -198,13 +199,13 @@ jobs:
            "packages.config" | "$(Agent.OS)"
            "packages.config"
         path: packages
-  
+
   - ${{ if eq(parameters.useLatestWinAppSDK, true)}}:
     - template: .\steps-update-winappsdk-and-restore-nuget.yml
       parameters:
         versionNumber: ${{ parameters.winAppSDKVersionNumber }}
         useExperimentalVersion: ${{ parameters.useExperimentalVersion }}
-  
+
   - ${{ if eq(parameters.useLatestWinAppSDK, false)}}:
     - template: .\steps-restore-nuget.yml
 
@@ -282,6 +283,27 @@ jobs:
         /p:RestorePackagesConfig=true
         /p:CIBuild=true
         /bl:$(LogOutputDirectory)\build-bug-report.binlog
+        ${{ parameters.additionalBuildOptions }}
+        $(MSBuildCacheParameters)
+        $(RestoreAdditionalProjectSourcesArg)
+      platform: $(BuildPlatform)
+      configuration: $(BuildConfiguration)
+      msbuildArchitecture: x64
+      maximumCpuCount: true
+    ${{ if eq(parameters.enableMsBuildCaching, true) }}:
+      env:
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+  - task: VSBuild@1
+    displayName: Build WebcamReportTool
+    inputs:
+      solution: '**/tools/WebcamReportTool/WebcamReportTool.sln'
+      vsVersion: 17.0
+      msbuildArgs: >-
+        -restore -graph
+        /p:RestorePackagesConfig=true
+        /p:CIBuild=true
+        /bl:$(LogOutputDirectory)\build-webcam-report.binlog
         ${{ parameters.additionalBuildOptions }}
         $(MSBuildCacheParameters)
         $(RestoreAdditionalProjectSourcesArg)
@@ -425,6 +447,16 @@ jobs:
           FolderPath: '$(BuildPlatform)/$(BuildConfiguration)'
           signType: batchSigning
           batchSignPolicyFile: '$(build.sourcesdirectory)\.pipelines\ESRPSigning_core.json'
+          ciPolicyFile: '$(build.sourcesdirectory)\.pipelines\CIPolicy.xml'
+
+    - template: steps-esrp-signing.yml
+      parameters:
+        displayName: Sign x86 DirectShow VCM
+        signingIdentity: ${{ parameters.signingIdentity }}
+        inputs:
+          FolderPath: 'x86/$(BuildConfiguration)'
+          signType: batchSigning
+          batchSignPolicyFile: '$(build.sourcesdirectory)\.pipelines\ESRPSigning_vcm.json'
           ciPolicyFile: '$(build.sourcesdirectory)\.pipelines\CIPolicy.xml'
 
     - template: steps-esrp-signing.yml

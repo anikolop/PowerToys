@@ -4,11 +4,11 @@
 
   <?include $(sys.CURRENTDIR)\Common.wxi?>
 
-  <!-- WiX Components with multiple files cause issues due to the way Windows installs them. 
+  <!-- WiX Components with multiple files cause issues due to the way Windows installs them.
          Windows decides whether to install a component by checking the existence of KeyPath file and its version.
          Thus, if some files were updated but KeyPath file was not, the component wouldn't be updated.
          Some resource files, e.g. images, do not have version, so even if Component has only a single image and a static GUID, it won't be updated.
-         
+
          Considering all of the above, it's much simpler to just have one file per Component with an implicit Guid.
 
          More info:
@@ -33,7 +33,7 @@
     <Upgrade Id="$(var.UpgradeCodeGUID)">
       <UpgradeVersion
          Minimum="0.0.0" Maximum="$(var.Version)"
-         Property="PREVIOUSVERSIONSINSTALLED" 
+         Property="PREVIOUSVERSIONSINSTALLED"
          IncludeMinimum="yes" IncludeMaximum="no" />
     </Upgrade>
 
@@ -69,6 +69,7 @@
       <ComponentGroupRef Id="RunComponentGroup" />
       <ComponentGroupRef Id="SettingsComponentGroup" />
       <ComponentGroupRef Id="ShortcutGuideComponentGroup" />
+      <ComponentGroupRef Id="VideoConferenceComponentGroup" />
       <ComponentGroupRef Id="MouseWithoutBordersComponentGroup" />
       <ComponentGroupRef Id="EnvironmentVariablesComponentGroup" />
       <ComponentGroupRef Id="AdvancedPasteComponentGroup" />
@@ -127,7 +128,7 @@
     <SetProperty Action="SetBOOTSTRAPPERINSTALLFOLDER" Id="BOOTSTRAPPERINSTALLFOLDER" Value="[DEFAULTBOOTSTRAPPERINSTALLFOLDER]" Before="DetectPrevInstallPath" Sequence="execute">
       <![CDATA[BOOTSTRAPPERINSTALLFOLDER = ""]]>
     </SetProperty>
-    <!-- Have to compare value sent by bootstrapper to default to avoid using it, as a check to verify it's not default. This hack can be removed if it's possible to set the bootstrapper option to the previous install folder--> 
+    <!-- Have to compare value sent by bootstrapper to default to avoid using it, as a check to verify it's not default. This hack can be removed if it's possible to set the bootstrapper option to the previous install folder-->
     <SetProperty Action="SetINSTALLFOLDERTOPREVIOUSINSTALLFOLDER" Id="INSTALLFOLDER" Value="[PREVIOUSINSTALLFOLDER]" After="DetectPrevInstallPath" Sequence="execute">
       <![CDATA[BOOTSTRAPPERINSTALLFOLDER = DEFAULTBOOTSTRAPPERINSTALLFOLDER AND PREVIOUSINSTALLFOLDER <> ""]]>
     </SetProperty>
@@ -206,8 +207,6 @@
       <Custom Action="TerminateProcesses" Before="InstallValidate" />
       <Custom Action="LaunchPowerToys" Before="InstallFinalize">NOT Installed</Custom>
 
-      <!-- Clean Video Conference Mute registry keys that might be around from previous installations. We've deprecated this utility since then. -->
-      <Custom Action="CleanVideoConferenceRegistry" Before="InstallFinalize">NOT Installed</Custom>
 
     </InstallExecuteSequence>
 
@@ -330,7 +329,7 @@
                     BinaryKey="PTCustomActions"
                     DllEntry="UninstallCommandNotFoundModuleCA"
                    />
-      
+
       <CustomAction Id="UpgradeCommandNotFound"
                     Return="ignore"
                     Impersonate="yes"
@@ -408,14 +407,6 @@
                   Impersonate="yes"
                   BinaryKey="PTCustomActions"
                   DllEntry="DetectPrevInstallPathCA"
-                  />
-
-    <CustomAction Id="CleanVideoConferenceRegistry"
-                  Return="ignore"
-                  Impersonate="yes"
-                  Execute="deferred"
-                  BinaryKey="PTCustomActions"
-                  DllEntry="CleanVideoConferenceRegistryCA"
                   />
 
     <CustomAction Id="ApplyModulesRegistryChangeSets"
